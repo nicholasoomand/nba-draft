@@ -73,7 +73,7 @@ input,select{font:inherit;color:var(--ink);background:var(--surface);border:1px 
 .delta.up{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
 @media (max-width:620px){
   .lrow{grid-template-columns:36px minmax(0,1fr)}
-  .tot{grid-column:2;justify-content:flex-start;text-align:left}
+  .tot{grid-column:2;justify-content:flex-start;text-align:left;flex-wrap:wrap;gap:10px 16px}
   .rank{font-size:28px}
 }
 .tbl-wrap{overflow-x:auto}
@@ -117,6 +117,13 @@ td.r,th.r{text-align:right}
 .opts{display:flex;gap:16px;flex-wrap:wrap;align-items:end}
 .opts label{display:flex;flex-direction:column;gap:5px}
 .note{font-size:13.5px;color:var(--muted);max-width:68ch}
+@media (max-width:480px){
+  nav{gap:0;margin-left:-6px}
+  nav a{font-size:15px;padding:8px 7px 10px;letter-spacing:.02em}
+  .hide-sm{display:none}
+  td,th{padding:9px 8px}
+  .tname{white-space:normal;min-width:120px}
+}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;z-index:20;max-width:calc(100% - 32px)}
 .linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
 .inline-confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -138,8 +145,8 @@ td.r,th.r{text-align:right}
     <nav id="nav" aria-label="Sections">
       <a href="#board" data-tab="board">Leaderboard</a>
       <a href="#draft" data-tab="draft">Draft</a>
-      <a href="#teams" data-tab="teams">All Teams</a>
-      <a href="#setup" data-tab="setup">League Setup</a>
+      <a href="#teams" data-tab="teams"><span class="hide-sm">All </span>Teams</a>
+      <a href="#setup" data-tab="setup"><span class="hide-sm">League </span>Setup</a>
     </nav>
   </div>
 </header>
@@ -214,7 +221,7 @@ function leaderboard(){
   rows.sort((x,y)=>y.w-x.w||x.l-y.l||x.name.localeCompare(y.name));
   const lead=rows[0];
   rows.forEach((r,k)=>{
-    r.gb = lead?((lead.w-r.w)+(r.l-lead.l))/2:0;
+    r.gb = lead?lead.w-r.w:0;
     r.rank = (k>0 && rows[k-1].w===r.w && rows[k-1].l===r.l)?rows[k-1].rank:k+1;
   });
   return rows;
@@ -253,9 +260,9 @@ function vBoard(){
         <div class="stat"><span class="label">Wins</span><div class="big num">${r.w}</div></div>
         <div class="stat"><span class="label">Losses</span><div class="v num">${r.l}</div></div>
         <div class="stat"><span class="label">Pct</span><div class="v num">${fmtPct(r.pct)}</div></div>
-        <div class="stat"><span class="label">GB</span><div class="v num">${fmtGB(r.gb)}</div></div>
+        <div class="stat"><span class="label">Back</span><div class="v num">${fmtGB(r.gb)}</div></div>
         <div class="stat" title="Wins so far plus remaining games at each team's preseason pace"><span class="label">Exp. wins</span><div class="v num">${f1(r.pj)}</div></div>
-        <div class="stat"><span class="label">${prev?"Since "+fmtDate(prev.date):"Last day"}</span><div><span class="delta num ${r.delta>0?"up":""}">${r.delta==null?"—":"+"+r.delta}</span></div></div>
+        <div class="stat"><span class="label">Last day</span><div><span class="delta num ${r.delta>0?"up":""}">${r.delta==null?"—":"+"+r.delta}</span></div></div>
       </div>
     </div>`).join("")+`</div>`;
   html+=vHistory();
@@ -323,11 +330,11 @@ function vTeams(){
     const list=TEAMS.filter(t=>t.c===c).map(t=>({...t,...rec(t.a)})).sort((x,y)=>{
       const px=(x.w+x.l)?x.w/(x.w+x.l):0,py=(y.w+y.l)?y.w/(y.w+y.l):0;return py-px||y.w-x.w||x.n.localeCompare(y.n)});
     return `<div class="stack" style="gap:10px"><h3>${c==="E"?"Eastern":"Western"} Conference</h3><div class="panel tbl-wrap"><table>
-     <thead><tr><th>Team</th><th class="r">W</th><th class="r">L</th><th class="r">Pct</th><th class="r">Line</th><th class="r">Exp. W</th><th>Drafted by</th></tr></thead><tbody>
+     <thead><tr><th>Team</th><th class="r">W</th><th class="r">L</th><th class="r hide-sm">Pct</th><th class="r hide-sm">Line</th><th class="r">Exp. W</th><th>Drafted by</th></tr></thead><tbody>
      ${list.map(t=>`<tr><td><span class="tname">${dot(t.a)}${esc(t.n)}</span></td>
        ${editWins?`<td class="r"><input type="number" min="0" max="82" id="w-${t.a}" value="${t.w}" style="width:64px"></td><td class="r"><input type="number" min="0" max="82" id="l-${t.a}" value="${t.l}" style="width:64px"></td>`
        :`<td class="r">${t.w}</td><td class="r">${t.l}</td>`}
-       <td class="r">${fmtPct((t.w+t.l)?t.w/(t.w+t.l):0)}</td><td class="r muted">${LINE[t.a]}</td><td class="r"><b>${f1(proj(t.a))}</b></td><td>${esc(ownerOf(t.a)||"")}</td></tr>`).join("")}
+       <td class="r hide-sm">${fmtPct((t.w+t.l)?t.w/(t.w+t.l):0)}</td><td class="r muted hide-sm">${LINE[t.a]}</td><td class="r"><b>${f1(proj(t.a))}</b></td><td>${esc(ownerOf(t.a)||"")}</td></tr>`).join("")}
      </tbody></table></div></div>`;
   };
   let head=`<div class="sec-head"><h2>All 30 teams</h2>`;
