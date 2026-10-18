@@ -99,7 +99,7 @@ async function actionRoute(req, res) {
   const role = same(password, AP) ? "admin" : same(password, LP) ? "player" : null;
   if (!role) return fail(res, 401, "Wrong password.");
   if (action === "check") return res.json({ ok: true, role });
-  if ((action === "reset" || action === "wins") && role !== "admin") {
+  if ((action === "reset" || action === "restart" || action === "wins") && role !== "admin") {
     return fail(res, 403, "Only the commissioner can do that.");
   }
 
@@ -136,6 +136,12 @@ async function actionRoute(req, res) {
       if (!league || !league.picks.length) return fail(res, 409, "There's no pick to undo.", { state: await getState() });
       if (body.expected !== league.picks.length) return fail(res, 409, "The board changed. Here's the latest.", { state: await getState() });
       league.picks.pop();
+      league.status = "drafting";
+      await redis.set("league", league);
+
+    } else if (action === "restart") {
+      if (!league) return fail(res, 409, "There's no league to restart.", { state: await getState() });
+      league.picks = [];
       league.status = "drafting";
       await redis.set("league", league);
 
