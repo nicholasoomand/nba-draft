@@ -1,0 +1,10 @@
+{
+  "rewrites": [
+    { "source": "/api/state", "destination": "/api/league?op=state" },
+    { "source": "/api/action", "destination": "/api/league?op=action" },
+    { "source": "/api/cron-standings", "destination": "/api/league?op=cron" }
+  ],
+  "crons": [
+    { "path": "/api/cron-standings", "schedule": "0 14 * * *" }
+  ]
+}

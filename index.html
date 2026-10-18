@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NBA Wins Draft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a draft-room board. Sticky header with tabs, one working panel below; the leaderboard reads like a scoreboard, the draft like a magnet board. */
+:root{
+  --bg:#EEF1F6; --surface:#FFFFFF; --sunk:#E3E8F0; --ink:#13203A; --muted:#5B6782; --line:#D3DAE6;
+  --accent:#E8601C; --accent-soft:#FDE6D8; --accent-ink:#FFFFFF; --good:#1F8A4C; --bad:#B4372C;
+  --display:"Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --body:"Barlow", "Segoe UI", system-ui, sans-serif;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1420; --surface:#161F31; --sunk:#1D283D; --ink:#E7ECF5; --muted:#93A0B8; --line:#2A3650;
+  --accent:#FF8A45; --accent-soft:#3A2618; --accent-ink:#1A0F07; --good:#4CC27E; --bad:#F07A6E; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1420; --surface:#161F31; --sunk:#1D283D; --ink:#E7ECF5; --muted:#93A0B8; --line:#2A3650;
+  --accent:#FF8A45; --accent-soft:#3A2618; --accent-ink:#1A0F07; --good:#4CC27E; --bad:#F07A6E; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.hrow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:14px 0}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(28px,5vw,40px);line-height:.95;margin:0;letter-spacing:.01em;text-transform:uppercase}
+h1 span{color:var(--accent)}
+.season{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+nav{display:flex;gap:4px;overflow-x:auto;margin-top:10px}
+nav a{font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;color:var(--muted);padding:8px 14px 10px;border-bottom:3px solid transparent;white-space:nowrap}
+nav a[aria-current="page"]{color:var(--ink);border-color:var(--accent)}
+nav a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{padding-block:22px 60px}
+h2{font-family:var(--display);font-weight:800;font-size:26px;text-transform:uppercase;letter-spacing:.02em;margin:0;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:19px;text-transform:uppercase;letter-spacing:.04em;margin:0}
+.label{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+.stack{display:flex;flex-direction:column;gap:18px}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.pad{padding:18px}
+button,.btn{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 14px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.primary:hover{filter:brightness(1.05)}
+button.danger{color:var(--bad);border-color:var(--bad);background:transparent}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;min-width:0}
+.num{font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 1.5px var(--surface),0 0 0 2.5px var(--line);flex:none}
+.empty{padding:36px 18px;text-align:center}
+.empty p{max-width:46ch;margin:8px auto 16px}
+
+/* Leaderboard */
+.board{display:flex;flex-direction:column}
+.lrow{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:6px 16px;align-items:center;padding:14px 18px;border-top:1px solid var(--line)}
+.lrow:first-child{border-top:0}
+.rank{font-family:var(--display);font-weight:800;font-size:34px;line-height:1;color:var(--muted);text-align:center}
+.lrow.lead .rank{color:var(--accent)}
+.pname{font-weight:700;font-size:18px;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--sunk);border-radius:999px;padding:3px 10px 3px 7px;font-size:13px;font-weight:600;white-space:nowrap}
+.chip .rec{color:var(--muted);font-weight:500}
+.tot{display:flex;gap:18px;align-items:flex-end;text-align:right}
+.big{font-family:var(--display);font-weight:800;font-size:40px;line-height:.9}
+.stat .label{display:block;margin-bottom:3px}
+.stat .v{font-weight:700;font-size:16px}
+.delta{display:inline-block;font-size:12px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.delta.up{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+@media (max-width:620px){
+  .lrow{grid-template-columns:36px minmax(0,1fr)}
+  .tot{grid-column:2;justify-content:flex-start;text-align:left}
+  .rank{font-size:28px}
+}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.tname{display:flex;align-items:center;gap:8px}
+
+/* Draft */
+.clock{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--ink);color:var(--bg);border-radius:var(--r);padding:18px 20px}
+.clock .label{color:color-mix(in srgb,var(--bg) 70%,transparent)}
+.clock .who{font-family:var(--display);font-weight:800;font-size:clamp(30px,6vw,46px);line-height:1;text-transform:uppercase;overflow-wrap:anywhere}
+.clock .who em{font-style:normal;color:var(--accent)}
+.clock .pk{font-family:var(--display);font-weight:600;font-size:22px;text-align:right;white-space:nowrap}
+.confirm{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--r);padding:12px 16px}
+.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:8px}
+.tbtn{display:flex;align-items:center;gap:9px;text-align:left;padding:10px 12px;font-weight:600;min-width:0}
+.tbtn .tn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.tbtn .rk{color:var(--muted);font-size:12px;width:18px;text-align:right;flex:none}
+.tbtn .pj{font-family:var(--display);font-weight:800;font-size:24px;line-height:1;text-align:right;flex:none}
+.tbtn .pj small{display:block;font-family:var(--body);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.tbtn small{display:block;font-weight:500;color:var(--muted);font-size:12px}
+.tbtn[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.tbtn.taken{opacity:.42;cursor:not-allowed;background:var(--sunk)}
+.dboard th,.dboard td{text-align:center}
+.dboard th:first-child,.dboard td:first-child{text-align:left;color:var(--muted);font-weight:600}
+.cell{display:inline-flex;align-items:center;gap:6px;font-weight:700}
+.cell.now{color:var(--accent)}
+.cell.open{color:var(--line)}
+.conf-tabs{display:flex;gap:6px}
+.seg{border-radius:999px;padding:6px 14px;font-size:13px}
+.seg[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* Setup */
+.plist{display:flex;flex-direction:column;gap:8px}
+.prow{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto auto;gap:6px;align-items:center}
+.prow .n{font-family:var(--display);font-weight:800;font-size:20px;color:var(--muted);text-align:center}
+.prow button{padding:7px 10px}
+.opts{display:flex;gap:16px;flex-wrap:wrap;align-items:end}
+.opts label{display:flex;flex-direction:column;gap:5px}
+.note{font-size:13.5px;color:var(--muted);max-width:68ch}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;z-index:20;max-width:calc(100% - 32px)}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
+.inline-confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media (prefers-reduced-motion:no-preference){.lrow,.tbtn{transition:background .15s,border-color .15s}}
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="hrow">
+      <div>
+        <div class="season" id="seasonLbl">2026–27 Regular Season</div>
+        <h1>NBA Wins <span>Draft</span></h1>
+      </div>
+      <div style="text-align:right"><div class="label" id="asOf"></div><div class="label" id="who" style="margin-top:4px"></div></div>
+    </div>
+    <nav id="nav" aria-label="Sections">
+      <a href="#board" data-tab="board">Leaderboard</a>
+      <a href="#draft" data-tab="draft">Draft</a>
+      <a href="#teams" data-tab="teams">All Teams</a>
+      <a href="#setup" data-tab="setup">League Setup</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <div class="panel empty" id="loading">
+    <h2>Loading the league</h2>
+    <p class="muted">Pulling the draft board and the latest win totals.</p>
+  </div>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const TEAMS = [
+ ["ATL","Atlanta Hawks","E","#E03A3E"],["BOS","Boston Celtics","E","#007A33"],["BKN","Brooklyn Nets","E","#6B6B6B"],
+ ["CHA","Charlotte Hornets","E","#00788C"],["CHI","Chicago Bulls","E","#CE1141"],["CLE","Cleveland Cavaliers","E","#860038"],
+ ["DET","Detroit Pistons","E","#C8102E"],["IND","Indiana Pacers","E","#FDBB30"],["MIA","Miami Heat","E","#98002E"],
+ ["MIL","Milwaukee Bucks","E","#00471B"],["NYK","New York Knicks","E","#F58426"],["ORL","Orlando Magic","E","#0077C0"],
+ ["PHI","Philadelphia 76ers","E","#006BB6"],["TOR","Toronto Raptors","E","#CE1141"],["WAS","Washington Wizards","E","#E31837"],
+ ["DAL","Dallas Mavericks","W","#00538C"],["DEN","Denver Nuggets","W","#FEC524"],["GSW","Golden State Warriors","W","#1D428A"],
+ ["HOU","Houston Rockets","W","#CE1141"],["LAC","LA Clippers","W","#1D428A"],["LAL","Los Angeles Lakers","W","#552583"],
+ ["MEM","Memphis Grizzlies","W","#5D76A9"],["MIN","Minnesota Timberwolves","W","#236192"],["NOP","New Orleans Pelicans","W","#85714D"],
+ ["OKC","Oklahoma City Thunder","W","#007AC1"],["PHX","Phoenix Suns","W","#E56020"],["POR","Portland Trail Blazers","W","#E03A3E"],
+ ["SAC","Sacramento Kings","W","#5A2D81"],["SAS","San Antonio Spurs","W","#8A9599"],["UTA","Utah Jazz","W","#753BBD"]
+].map(([a,n,c,col])=>({a,n,c,col}));
+const T = Object.fromEntries(TEAMS.map(t=>[t.a,t]));
+// Preseason win-total lines, Fanatics Sportsbook, published Oct 16, 2026
+const LINE = {ATL:43.5,BOS:51.5,BKN:24.5,CHA:39.5,CHI:29.5,CLE:48.5,DAL:34.5,DEN:49.5,DET:49.5,GSW:39.5,HOU:48.5,IND:44.5,LAC:27.5,LAL:46.5,MEM:28.5,MIA:46.5,MIL:26.5,MIN:48.5,NOP:27.5,NYK:52.5,OKC:60.5,ORL:43.5,PHI:50.5,PHX:40.5,POR:43.5,SAC:20.5,SAS:59.5,TOR:45.5,UTA:35.5,WAS:35.5};
+const LINE_SRC = "Preseason lines: Fanatics Sportsbook, Oct 16, 2026";
+
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dot = a=>`<span class="dot" style="background:${T[a]?.col||'#999'}"></span>`;
+
+let role=null, netErr=false;
+const canWriteF=()=>!!role, canAdminF=()=>role==="admin";
+let league=null, leagueLoaded=false, standings=null, history=[];
+let tab=null, selTeam=null, confFilter="ALL", editWins=false, confirmReset=false, confirmUndo=false;
+let draftForm=null; // setup form state
+
+function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,3200)}
+
+/* ---------- derived data ---------- */
+// Snake with a third-round reversal: R1 1→N, R2 N→1, R3 N→1, then alternating (R4 1→N)
+const forward = r => r===0 || (r>=3 && r%2===1);
+const roundsFor = n => n>6?3:4;
+function rec(a){const r=standings?.teams?.[a];return {w:+(r?.w||0),l:+(r?.l||0)}}
+// Expected wins: wins so far plus remaining games at the preseason line's pace
+function proj(a){const r=rec(a),gp=r.w+r.l;return r.w+Math.max(0,82-gp)*(LINE[a]/82)}
+const f1=x=>x.toFixed(1);
+function pickInfo(idx){
+  const n=league.players.length, round=Math.floor(idx/n), pos=idx%n;
+  return {round, pos, player: forward(round)?pos:n-1-pos};
+}
+function ownerOf(a){
+  if(!league?.picks) return null;
+  const p=league.picks.find(x=>x.t===a);return p?league.players[p.p]:null;
+}
+function playerTeams(i){return (league?.picks||[]).filter(p=>p.p===i).map(p=>p.t)}
+function histTotals(h){
+  // totals per player from a history doc
+  return league.players.map((_,i)=>playerTeams(i).reduce((s,a)=>s+(+(h.teams?.[a]?.w||0)),0));
+}
+function leaderboard(){
+  const prev = previousSnapshot();
+  const prevTot = prev?histTotals(prev):null;
+  const rows = league.players.map((name,i)=>{
+    const teams=playerTeams(i); let w=0,l=0,pj=0;
+    teams.forEach(a=>{const r=rec(a);w+=r.w;l+=r.l;pj+=proj(a)});
+    return {name,i,teams,w,l,pj,pct:(w+l)?w/(w+l):0,delta:prevTot?w-prevTot[i]:null};
+  });
+  rows.sort((x,y)=>y.w-x.w||x.l-y.l||x.name.localeCompare(y.name));
+  const lead=rows[0];
+  rows.forEach((r,k)=>{
+    r.gb = lead?((lead.w-r.w)+(r.l-lead.l))/2:0;
+    r.rank = (k>0 && rows[k-1].w===r.w && rows[k-1].l===r.l)?rows[k-1].rank:k+1;
+  });
+  return rows;
+}
+function previousSnapshot(){
+  if(!history.length||!standings?.asOf) return null;
+  const older=history.filter(h=>h.date<standings.asOf);
+  return older.length?older[older.length-1]:null;
+}
+const fmtPct = p=>p.toFixed(3).replace(/^0/,"");
+const fmtGB = g=>g===0?"—":(g%1?g.toFixed(1):String(g));
+function fmtDate(iso){if(!iso)return"";const [y,m,d]=iso.split("-").map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric"})}
+function todayISO(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+
+/* ---------- views ---------- */
+let canWrite=false, canAdmin=false;
+function unlockBox(msg){return `<div class="panel pad" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="note" style="flex:1 1 220px">${msg}</span><input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="flex:1 1 160px"><button class="primary" id="unlockBtn">Unlock</button></div>`}
+function vBoard(){
+  if(!league) return noLeague();
+  if(league.status!=="complete") return `
+    <div class="panel empty"><h2>Draft in progress</h2>
+    <p class="muted">The leaderboard fills in once all ${league.players.length*league.rounds} picks are made. ${league.picks.length} made so far.</p>
+    <a class="btn" href="#draft">Go to the draft</a></div>`;
+  const rows=leaderboard();
+  const prev=previousSnapshot();
+  let html=`<div class="stack">
+   <div class="sec-head"><h2>Standings</h2><span class="label">Ranked by total wins · ties go to fewer losses</span></div>
+   <div class="panel board">`+rows.map(r=>`
+    <div class="lrow ${r.rank===1&&r.w>0?"lead":""}">
+      <div class="rank num">${r.rank}</div>
+      <div style="min-width:0">
+        <div class="pname">${esc(r.name)}</div>
+        <div class="chips">${r.teams.map(a=>{const x=rec(a);return `<span class="chip" title="${esc(T[a].n)}">${dot(a)}${a} <span class="rec num">${x.w}-${x.l}</span></span>`}).join("")}</div>
+      </div>
+      <div class="tot">
+        <div class="stat"><span class="label">Wins</span><div class="big num">${r.w}</div></div>
+        <div class="stat"><span class="label">Losses</span><div class="v num">${r.l}</div></div>
+        <div class="stat"><span class="label">Pct</span><div class="v num">${fmtPct(r.pct)}</div></div>
+        <div class="stat"><span class="label">GB</span><div class="v num">${fmtGB(r.gb)}</div></div>
+        <div class="stat" title="Wins so far plus remaining games at each team's preseason pace"><span class="label">Exp. wins</span><div class="v num">${f1(r.pj)}</div></div>
+        <div class="stat"><span class="label">${prev?"Since "+fmtDate(prev.date):"Last day"}</span><div><span class="delta num ${r.delta>0?"up":""}">${r.delta==null?"—":"+"+r.delta}</span></div></div>
+      </div>
+    </div>`).join("")+`</div>`;
+  html+=vHistory();
+  return html+`</div>`;
+}
+function vHistory(){
+  const days=history.slice(-10);
+  if(!days.length) return `<div class="panel pad"><h3>Day by day</h3><p class="muted" style="margin:6px 0 0">Each morning's win totals are logged here once the season's first games are in.</p></div>`;
+  const totals=days.map(histTotals);
+  const order=leaderboard().map(r=>r.i);
+  return `<div class="stack" style="gap:10px"><div class="sec-head"><h3>Day by day</h3><span class="label">Total wins after each day · last ${days.length} days</span></div>
+  <div class="panel tbl-wrap"><table><thead><tr><th>Player</th>${days.map(d=>`<th class="r">${fmtDate(d.date)}</th>`).join("")}</tr></thead><tbody>
+  ${order.map(i=>`<tr><td><b>${esc(league.players[i])}</b></td>${totals.map((t,k)=>{const ch=k?t[i]-totals[k-1][i]:0;return `<td class="r">${t[i]}${k&&ch>0?` <span class="muted" style="font-size:12px">+${ch}</span>`:""}</td>`}).join("")}</tr>`).join("")}
+  </tbody></table></div></div>`;
+}
+function noLeague(){
+  return `<div class="panel empty"><h2>No league yet</h2>
+  <p class="muted">Add everyone who's drafting, pick 3 or 4 teams each, and start the snake draft. The leaderboard updates every morning with real NBA win totals.</p>
+  <a class="btn primary" href="#setup" style="text-decoration:none;display:inline-block">Set up the league</a></div>`;
+}
+
+function vDraft(){
+  if(!league) return noLeague();
+  const n=league.players.length,total=n*league.rounds,idx=league.picks.length,done=idx>=total;
+  let html=`<div class="stack">`;
+  if(!done){
+    const pi=pickInfo(idx);
+    html+=`<div class="clock"><div style="min-width:0"><div class="label">On the clock</div><div class="who">${esc(league.players[pi.player])}</div></div>
+      <div class="pk"><div class="label">Round ${pi.round+1} of ${league.rounds}</div>Pick ${idx+1}<span class="muted" style="color:inherit;opacity:.6"> / ${total}</span></div></div>`;
+    if(selTeam){
+      html+=`<div class="confirm"><div>Draft <b>${esc(T[selTeam].n)}</b> for <b>${esc(league.players[pi.player])}</b>?</div>
+        <div class="inline-confirm"><button id="cancelPick">Cancel</button><button class="primary" id="confirmPick">Confirm pick</button></div></div>`;
+    }
+    const avail=TEAMS.filter(t=>!ownerOf(t.a));
+    const list=avail.filter(t=>confFilter==="ALL"||t.c===confFilter).sort((x,y)=>proj(y.a)-proj(x.a)||x.n.localeCompare(y.n));
+    html+=`<div class="sec-head"><div><h3>Available teams · ${avail.length} left</h3><div class="label" style="margin-top:4px">Sorted by expected wins · ${LINE_SRC}</div></div><div class="conf-tabs">${["ALL","E","W"].map(c=>`<button class="seg" data-conf="${c}" aria-pressed="${confFilter===c}">${c==="ALL"?"All":c==="E"?"East":"West"}</button>`).join("")}</div></div>
+      <div class="picker">${list.map((t,k)=>{const r=rec(t.a);return `<button class="tbtn" data-team="${t.a}" ${!canWrite?"disabled":""} aria-pressed="${selTeam===t.a}"><span class="rk num">${k+1}</span>${dot(t.a)}<span class="tn">${esc(t.n)}<small class="num">${r.w}-${r.l} now · line ${LINE[t.a]}</small></span><span class="pj num">${f1(proj(t.a))}<small>exp. W</small></span></button>`}).join("")}</div>`;
+    if(!canWrite) html+=unlockBox("Enter the league password to make picks.");
+  } else {
+    html+=`<div class="clock"><div><div class="label">Draft complete</div><div class="who">All ${total} picks are in</div></div><a class="btn" href="#board" style="text-decoration:none">Leaderboard</a></div>`;
+  }
+  // board
+  html+=`<div class="sec-head"><h3>Draft board</h3><span class="label">Snake order · round 3 repeats round 2's order</span></div>
+   <div class="panel tbl-wrap"><table class="dboard"><thead><tr><th>Round</th>${league.players.map(p=>`<th>${esc(p)}</th>`).join("")}</tr></thead><tbody>`;
+  for(let r=0;r<league.rounds;r++){
+    html+=`<tr><td>R${r+1} ${forward(r)?"→":"←"}</td>`;
+    for(let p=0;p<n;p++){
+      const pos=forward(r)?p:n-1-p, k=r*n+pos, pk=league.picks[k];
+      html+=`<td>${pk?`<span class="cell">${dot(pk.t)}${pk.t}</span>`:k===idx?`<span class="cell now">● #${k+1}</span>`:`<span class="cell open muted">#${k+1}</span>`}</td>`;
+    }
+    html+=`</tr>`;
+  }
+  html+=`</tbody></table></div>`;
+  if(idx>0 && canWrite){
+    const last=league.picks[idx-1];
+    html+= confirmUndo
+      ? `<div class="inline-confirm"><span>Undo ${esc(league.players[last.p])}'s pick of ${esc(T[last.t].n)}?</span><button id="undoNo">Keep it</button><button class="danger" id="undoYes">Undo pick</button></div>`
+      : `<div><button id="undoAsk">Undo last pick</button></div>`;
+  }
+  return html+`</div>`;
+}
+
+function vTeams(){
+  const conf=c=>{
+    const list=TEAMS.filter(t=>t.c===c).map(t=>({...t,...rec(t.a)})).sort((x,y)=>{
+      const px=(x.w+x.l)?x.w/(x.w+x.l):0,py=(y.w+y.l)?y.w/(y.w+y.l):0;return py-px||y.w-x.w||x.n.localeCompare(y.n)});
+    return `<div class="stack" style="gap:10px"><h3>${c==="E"?"Eastern":"Western"} Conference</h3><div class="panel tbl-wrap"><table>
+     <thead><tr><th>Team</th><th class="r">W</th><th class="r">L</th><th class="r">Pct</th><th class="r">Line</th><th class="r">Exp. W</th><th>Drafted by</th></tr></thead><tbody>
+     ${list.map(t=>`<tr><td><span class="tname">${dot(t.a)}${esc(t.n)}</span></td>
+       ${editWins?`<td class="r"><input type="number" min="0" max="82" id="w-${t.a}" value="${t.w}" style="width:64px"></td><td class="r"><input type="number" min="0" max="82" id="l-${t.a}" value="${t.l}" style="width:64px"></td>`
+       :`<td class="r">${t.w}</td><td class="r">${t.l}</td>`}
+       <td class="r">${fmtPct((t.w+t.l)?t.w/(t.w+t.l):0)}</td><td class="r muted">${LINE[t.a]}</td><td class="r"><b>${f1(proj(t.a))}</b></td><td>${esc(ownerOf(t.a)||"")}</td></tr>`).join("")}
+     </tbody></table></div></div>`;
+  };
+  let head=`<div class="sec-head"><h2>All 30 teams</h2>`;
+  if(canAdmin) head+= editWins?`<div class="inline-confirm"><button id="editCancel">Cancel</button><button class="primary" id="editSave">Save wins</button></div>`:`<button id="editStart">Edit wins by hand</button>`;
+  head+=`</div>`;
+  if(!canAdmin) head+=`<details class="note"><summary>Commissioner? Unlock to edit wins by hand</summary><div style="margin-top:8px">${unlockBox("Enter the commissioner password.")}</div></details>`;
+  const src=standings?.updatedAt?`<p class="note">Win totals ${standings.source==="manual"?"entered by hand":"updated automatically from NBA standings"} on ${new Date(standings.updatedAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}.</p>`:`<p class="note">No win totals recorded yet. They arrive with the first daily update.</p>`;
+  return `<div class="stack">${head}${src}<p class="note" style="margin-top:-10px">Exp. W is wins so far plus each remaining game at the team's preseason pace. ${LINE_SRC}.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr));gap:18px">${conf("E")}${conf("W")}</div></div>`;
+}
+
+function vSetup(){
+  if(league){
+    return `<div class="stack"><h2>League setup</h2>
+     <div class="panel pad stack" style="gap:12px">
+      <div><span class="label">Players, in first-round order</span><div style="margin-top:4px">${league.players.map((p,i)=>`${i+1}. ${esc(p)}`).join(" · ")}</div></div>
+      <div><span class="label">Teams per player</span><div>${league.rounds}</div></div>
+      <div><span class="label">Status</span><div>${league.status==="complete"?"Draft complete":"Drafting · "+league.picks.length+" of "+league.players.length*league.rounds+" picks made"}</div></div>
+     </div>
+     ${canAdmin?(confirmReset?`<div class="confirm"><div>Delete this league and its draft picks? Win history is kept.</div><div class="inline-confirm"><button id="resetNo">Keep league</button><button class="danger" id="resetYes">Delete league</button></div></div>`
+       :`<div><button class="danger" id="resetAsk">Start over with a new league</button></div>`):unlockBox("Enter the commissioner password to reset the league.")}
+    </div>`;
+  }
+  if(!draftForm) draftForm={players:["",""]};
+  const n=draftForm.players.length, rounds=roundsFor(n);
+  return `<div class="stack"><div class="sec-head"><h2>Set up the league</h2><span class="label">2026–27 season</span></div>
+   <div class="panel pad stack">
+    <div class="stack" style="gap:8px"><h3>Who's drafting?</h3><p class="note" style="margin:0">List players in first-round order, or shuffle for a random order. Round 1 goes first to last, round 2 last to first, and round 3 last to first again, so whoever picks last in round 1 gets back-to-back picks then leads off round 3. A 4th round goes first to last.</p></div>
+    <div class="plist">${draftForm.players.map((p,i)=>`<div class="prow"><span class="n num">${i+1}</span>
+      <input id="pl-${i}" data-pl="${i}" value="${esc(p)}" placeholder="Player ${i+1} name" maxlength="24" aria-label="Player ${i+1} name">
+      <button data-up="${i}" ${i===0?"disabled":""} aria-label="Move up">↑</button><button data-down="${i}" ${i===n-1?"disabled":""} aria-label="Move down">↓</button>
+      <button data-rm="${i}" ${n<=2?"disabled":""} aria-label="Remove">✕</button></div>`).join("")}</div>
+    <div class="inline-confirm"><button id="addPl" ${n>=10?"disabled":""}>+ Add player</button><button id="shuffle">Shuffle order</button></div>
+    <div class="opts"><div><span class="label">Teams per player</span><div class="big num">${rounds}</div></div>
+      <div class="note">Everyone drafts the same number of teams: 4 each with up to 6 players, 3 each with 7 or more.<br>${n} players × ${rounds} teams = ${n*rounds} of 30 teams drafted.</div></div>
+    ${canWrite?`<div><button class="primary" id="startDraft">Start the draft</button></div>`:unlockBox("Enter the league password to start the draft.")}
+   </div></div>`;
+}
+
+/* ---------- render ---------- */
+function defaultTab(){return !league?"setup":league.status==="complete"?"board":"draft"}
+function render(){
+  const h=location.hash.slice(1);
+  tab=["board","draft","teams","setup"].includes(h)?h:defaultTab();
+  document.querySelectorAll("#nav a").forEach(a=>a.dataset.tab===tab?a.setAttribute("aria-current","page"):a.removeAttribute("aria-current"));
+  $("#asOf").textContent = standings?.asOf?"Wins through "+fmtDate(standings.asOf):"";
+  canWrite=canWriteF(); canAdmin=canAdminF();
+  $("#who").innerHTML = role?`${role==="admin"?"Commissioner":"Player"} · <button id="lockBtn" class="linkbtn">Lock</button>`:"";
+  if(netErr){ $("#main").innerHTML=`<div class="panel empty"><h2>Can't reach the league</h2><p class="muted">${esc(netErr)} The page retries on its own.</p></div>`; return; }
+  if(!leagueLoaded) return;
+  const active=document.activeElement?.id;
+  $("#main").innerHTML = tab==="board"?vBoard():tab==="draft"?vDraft():tab==="teams"?vTeams():vSetup();
+  if(active&&document.getElementById(active)&&active.startsWith("pl-")) document.getElementById(active).focus();
+}
+window.addEventListener("hashchange",()=>{selTeam=null;confirmUndo=false;confirmReset=false;render();window.scrollTo(0,0)});
+
+/* ---------- server ---------- */
+let pw=""; try{pw=localStorage.getItem("nbawd-pw")||""}catch{}
+function savePw(v){pw=v;try{v?localStorage.setItem("nbawd-pw",v):localStorage.removeItem("nbawd-pw")}catch{}}
+function applyState(st){
+  if(!st)return;
+  league=st.league||null; standings=st.standings||null; history=st.history||[]; leagueLoaded=true;
+  if(league&&selTeam&&ownerOf(selTeam))selTeam=null;
+  render();
+}
+async function refresh(){
+  try{const r=await fetch("/api/state",{cache:"no-store"});
+    if(r.ok){netErr=false;applyState(await r.json());return}
+    const j=await r.json().catch(()=>null); throw (j&&j.error)||("The server answered "+r.status+(r.status===404?". The api folder may be missing from GitHub.":"."));}
+  catch(e){if(!leagueLoaded){netErr=typeof e==="string"?e:"Check your connection.";render()}}
+}
+async function api(action,body={}){
+  const r=await fetch("/api/action",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action,password:pw,...body})});
+  const j=await r.json().catch(()=>({}));
+  if(j.state)applyState(j.state);
+  if(r.status===401){if(action!=="check"){savePw("");role=null;render()}throw {code:"auth",message:j.error||"Wrong password."}}
+  if(!r.ok)throw {code:j.code||"error",message:j.error||"Couldn't save. Try again."};
+  return j;
+}
+function writeFail(e){toast(e?.message||"Couldn't save. Check your connection and try again.")}
+async function unlock(){
+  const v=(document.getElementById("pw")?.value||"").trim(); if(!v){toast("Enter the password.");return}
+  const old=pw; pw=v;
+  try{const j=await api("check");role=j.role;savePw(v);toast(role==="admin"?"Unlocked as commissioner":"Unlocked. You can make picks.");render()}
+  catch(e){pw=old;toast(e.code==="auth"?"That password didn't work.":e.message)}
+}
+async function makePick(team){
+  try{
+    const j=await api("pick",{team,expected:league.picks.length});
+    const last=j.state.league.picks.at(-1);
+    toast(`${j.state.league.players[last.p]} takes the ${T[team].n.split(" ").slice(-1)[0]}`);
+    selTeam=null;
+  }catch(e){selTeam=null;writeFail(e)}
+}
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("button");if(!b)return;
+  if(b.id==="unlockBtn"){await unlock();return}
+  if(b.id==="lockBtn"){savePw("");role=null;render();return}
+  if(b.dataset.team){selTeam=selTeam===b.dataset.team?null:b.dataset.team;render();return}
+  if(b.dataset.conf){confFilter=b.dataset.conf;render();return}
+  if(b.id==="cancelPick"){selTeam=null;render();return}
+  if(b.id==="confirmPick"){b.disabled=true;await makePick(selTeam);render();return}
+  if(b.id==="undoAsk"){confirmUndo=true;render();return}
+  if(b.id==="undoNo"){confirmUndo=false;render();return}
+  if(b.id==="undoYes"){confirmUndo=false;try{await api("undo",{expected:league.picks.length});toast("Last pick undone")}catch(err){writeFail(err)}render();return}
+  if(b.id==="resetAsk"){confirmReset=true;render();return}
+  if(b.id==="resetNo"){confirmReset=false;render();return}
+  if(b.id==="resetYes"){confirmReset=false;try{await api("reset");draftForm=null;location.hash="#setup";toast("League deleted")}catch(err){writeFail(err)}render();return}
+  if(b.id==="editStart"){editWins=true;render();return}
+  if(b.id==="editCancel"){editWins=false;render();return}
+  if(b.id==="editSave"){await saveWins(b);return}
+  if(!draftForm)return;
+  const P=draftForm.players;
+  if(b.id==="addPl"){P.push("");render();document.getElementById("pl-"+(P.length-1))?.focus();return}
+  if(b.id==="shuffle"){for(let i=P.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[P[i],P[j]]=[P[j],P[i]]}render();return}
+  if(b.dataset.rm){P.splice(+b.dataset.rm,1);render();return}
+  if(b.dataset.up){const i=+b.dataset.up;[P[i-1],P[i]]=[P[i],P[i-1]];render();return}
+  if(b.dataset.down){const i=+b.dataset.down;[P[i+1],P[i]]=[P[i],P[i+1]];render();return}
+  if(b.id==="startDraft"){
+    const names=P.map(s=>s.trim()).filter(Boolean);
+    if(names.length<2){toast("Add at least two players.");return}
+    if(new Set(names.map(s=>s.toLowerCase())).size!==names.length){toast("Each player needs a different name.");return}
+    const rounds=roundsFor(names.length);
+    b.disabled=true;
+    try{await api("setup",{players:names,rounds});location.hash="#draft"}
+    catch(err){b.disabled=false;writeFail(err)}
+  }
+});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="pw"){e.preventDefault();unlock()}});
+document.addEventListener("input",e=>{
+  if(e.target.dataset.pl!=null&&draftForm){draftForm.players[+e.target.dataset.pl]=e.target.value}
+});
+
+async function saveWins(b){
+  const teams={};
+  for(const t of TEAMS){
+    const w=parseInt(document.getElementById("w-"+t.a).value,10),l=parseInt(document.getElementById("l-"+t.a).value,10);
+    if(!(w>=0&&w<=82&&l>=0&&l<=82&&w+l<=82)){toast(`Check the record for the ${t.n}.`);return}
+    teams[t.a]={w,l};
+  }
+  b.disabled=true;
+  try{await api("wins",{teams,date:todayISO()});editWins=false;toast("Wins saved");render()}
+  catch(err){b.disabled=false;writeFail(err)}
+}
+
+/* ---------- boot ---------- */
+render();
+(async()=>{
+  await refresh();
+  if(pw){try{const j=await api("check");role=j.role}catch{savePw("")}render()}
+  const loop=async()=>{ if(!document.hidden) await refresh(); setTimeout(loop, (!leagueLoaded||league?.status==="drafting")?4000:60000) };
+  setTimeout(loop,4000);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
+})();
+</script>
+
+</body>
+</html>
