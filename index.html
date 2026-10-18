@@ -238,6 +238,7 @@ function todayISO(){const d=new Date();return d.getFullYear()+"-"+String(d.getMo
 
 /* ---------- views ---------- */
 let canWrite=false, canAdmin=false;
+let me=null; try{me=localStorage.getItem("nbawd-me")}catch{}
 function unlockBox(msg){return `<div class="panel pad" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="note" style="flex:1 1 220px">${msg}</span><input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="flex:1 1 160px"><button class="primary" id="unlockBtn">Unlock</button></div>`}
 function vBoard(){
   if(!league) return noLeague();
@@ -253,7 +254,7 @@ function vBoard(){
     <div class="lrow ${r.rank===1&&r.w>0?"lead":""}">
       <div class="rank num">${r.rank}</div>
       <div style="min-width:0">
-        <div class="pname">${esc(r.name)}</div>
+        <div class="pname">${esc(r.name)}${r.name===me?' <span class="delta up">you</span>':""}</div>
         <div class="chips">${r.teams.map(a=>{const x=rec(a);return `<span class="chip" title="${esc(T[a].n)}">${dot(a)}${a} <span class="rec num">${x.w}-${x.l}</span></span>`}).join("")}</div>
       </div>
       <div class="tot">
@@ -288,9 +289,16 @@ function vDraft(){
   if(!league) return noLeague();
   const n=league.players.length,total=n*league.rounds,idx=league.picks.length,done=idx>=total;
   let html=`<div class="stack">`;
+  const meIdx=league.players.indexOf(me);
+  if(!done && meIdx<0){
+    html+=`<div class="panel pad stack" style="gap:10px"><h3>Who are you?</h3><p class="note" style="margin:0">Tap your name. This device remembers it, so the site can tell you when it's your turn.</p>
+      <div class="inline-confirm">${league.players.map(p=>`<button data-me="${esc(p)}">${esc(p)}</button>`).join("")}</div></div>`;
+  } else if(meIdx>=0){
+    html+=`<div class="note">Drafting as <b>${esc(me)}</b> · <button id="changeMe" class="linkbtn">Not you?</button></div>`;
+  }
   if(!done){
-    const pi=pickInfo(idx);
-    html+=`<div class="clock"><div style="min-width:0"><div class="label">On the clock</div><div class="who">${esc(league.players[pi.player])}</div></div>
+    const pi=pickInfo(idx), mine=pi.player===meIdx, myTurn=mine||canAdmin;
+    html+=`<div class="clock"><div style="min-width:0"><div class="label">${mine?"You're on the clock":"On the clock"}</div><div class="who">${mine?"<em>Your pick</em>":esc(league.players[pi.player])}</div></div>
       <div class="pk"><div class="label">Round ${pi.round+1} of ${league.rounds}</div>Pick ${idx+1}<span class="muted" style="color:inherit;opacity:.6"> / ${total}</span></div></div>`;
     if(selTeam){
       html+=`<div class="confirm"><div>Draft <b>${esc(T[selTeam].n)}</b> for <b>${esc(league.players[pi.player])}</b>?</div>
@@ -299,14 +307,16 @@ function vDraft(){
     const avail=TEAMS.filter(t=>!ownerOf(t.a));
     const list=avail.filter(t=>confFilter==="ALL"||t.c===confFilter).sort((x,y)=>proj(y.a)-proj(x.a)||x.n.localeCompare(y.n));
     html+=`<div class="sec-head"><div><h3>Available teams · ${avail.length} left</h3><div class="label" style="margin-top:4px">Sorted by expected wins · ${LINE_SRC}</div></div><div class="conf-tabs">${["ALL","E","W"].map(c=>`<button class="seg" data-conf="${c}" aria-pressed="${confFilter===c}">${c==="ALL"?"All":c==="E"?"East":"West"}</button>`).join("")}</div></div>
-      <div class="picker">${list.map((t,k)=>{const r=rec(t.a);return `<button class="tbtn" data-team="${t.a}" ${!canWrite?"disabled":""} aria-pressed="${selTeam===t.a}"><span class="rk num">${k+1}</span>${dot(t.a)}<span class="tn">${esc(t.n)}<small class="num">${r.w}-${r.l} now · line ${LINE[t.a]}</small></span><span class="pj num">${f1(proj(t.a))}<small>exp. W</small></span></button>`}).join("")}</div>`;
-    if(!canWrite) html+=unlockBox("Enter the league password to make picks.");
+      <div class="picker">${list.map((t,k)=>{const r=rec(t.a);return `<button class="tbtn" data-team="${t.a}" ${!canWrite||!myTurn?"disabled":""} aria-pressed="${selTeam===t.a}"><span class="rk num">${k+1}</span>${dot(t.a)}<span class="tn">${esc(t.n)}<small class="num">${r.w}-${r.l} now · line ${LINE[t.a]}</small></span><span class="pj num">${f1(proj(t.a))}<small>exp. W</small></span></button>`}).join("")}</div>`;
+    if(!canWrite) html+=unlockBox("Enter the league password to make picks. Your admin password works too.");
+    else if(!myTurn) html+=`<p class="note">Waiting for <b>${esc(league.players[pi.player])}</b> to pick. The teams unlock when it's your turn.</p>`;
+    else if(!mine) html+=`<p class="note">Commissioner mode: you can make this pick for ${esc(league.players[pi.player])}.</p>`;
   } else {
     html+=`<div class="clock"><div><div class="label">Draft complete</div><div class="who">All ${total} picks are in</div></div><a class="btn" href="#board" style="text-decoration:none">Leaderboard</a></div>`;
   }
   // board
   html+=`<div class="sec-head"><h3>Draft board</h3><span class="label">Snake order · round 3 repeats round 2's order</span></div>
-   <div class="panel tbl-wrap"><table class="dboard"><thead><tr><th>Round</th>${league.players.map(p=>`<th>${esc(p)}</th>`).join("")}</tr></thead><tbody>`;
+   <div class="panel tbl-wrap"><table class="dboard"><thead><tr><th>Round</th>${league.players.map(p=>`<th${p===me?' style="color:var(--accent)"':""}>${esc(p)}${p===me?" (you)":""}</th>`).join("")}</tr></thead><tbody>`;
   for(let r=0;r<league.rounds;r++){
     html+=`<tr><td>R${r+1} ${forward(r)?"→":"←"}</td>`;
     for(let p=0;p<n;p++){
@@ -353,11 +363,12 @@ function vSetup(){
       <div><span class="label">Teams per player</span><div>${league.rounds}</div></div>
       <div><span class="label">Status</span><div>${league.status==="complete"?"Draft complete":"Drafting · "+league.picks.length+" of "+league.players.length*league.rounds+" picks made"}</div></div>
      </div>
-     ${canAdmin?(confirmReset?`<div class="confirm"><div>Delete this league and its draft picks? Win history is kept.</div><div class="inline-confirm"><button id="resetNo">Keep league</button><button class="danger" id="resetYes">Delete league</button></div></div>`
-       :`<div><button class="danger" id="resetAsk">Start over with a new league</button></div>`):unlockBox("Enter the commissioner password to reset the league.")}
+     <div class="panel pad stack" style="gap:10px"><h3>Practice runs</h3><p class="note" style="margin:0">Did a trial draft? <b>Restart the draft</b> clears every pick but keeps the same players and order. <b>Start over</b> deletes the league so you can enter new names.</p>
+     ${canAdmin?(confirmReset?`<div class="confirm"><div>${confirmReset==="restart"?"Clear all "+league.picks.length+" picks and restart the draft with the same players?":"Delete this league and its draft picks? Win history is kept."}</div><div class="inline-confirm"><button id="resetNo">Cancel</button><button class="danger" id="resetYes">${confirmReset==="restart"?"Clear picks":"Delete league"}</button></div></div>`
+       :`<div class="inline-confirm"><button id="restartAsk">Restart the draft</button><button class="danger" id="resetAsk">Start over with a new league</button></div>`):unlockBox("Enter the commissioner (admin) password to restart or reset the league.")}</div>
     </div>`;
   }
-  if(!draftForm) draftForm={players:["",""]};
+  if(!draftForm){try{draftForm=JSON.parse(localStorage.getItem("nbawd-form"))}catch{}; if(!draftForm||!Array.isArray(draftForm.players))draftForm={players:["",""]}}
   const n=draftForm.players.length, rounds=roundsFor(n);
   return `<div class="stack"><div class="sec-head"><h2>Set up the league</h2><span class="label">2026–27 season</span></div>
    <div class="panel pad stack">
@@ -369,7 +380,8 @@ function vSetup(){
     <div class="inline-confirm"><button id="addPl" ${n>=10?"disabled":""}>+ Add player</button><button id="shuffle">Shuffle order</button></div>
     <div class="opts"><div><span class="label">Teams per player</span><div class="big num">${rounds}</div></div>
       <div class="note">Everyone drafts the same number of teams: 4 each with up to 6 players, 3 each with 7 or more.<br>${n} players × ${rounds} teams = ${n*rounds} of 30 teams drafted.</div></div>
-    ${canWrite?`<div><button class="primary" id="startDraft">Start the draft</button></div>`:unlockBox("Enter the league password to start the draft.")}
+    <p class="note" style="margin:0"><b>Names are saved for everyone when you click Start the draft.</b> Until then they're only on this device.</p>
+    ${canWrite?`<div><button class="primary" id="startDraft">Start the draft</button></div>`:unlockBox("Step 1: enter the league password (your admin password works too). Step 2: click Start the draft.")}
    </div></div>`;
 }
 
@@ -431,6 +443,8 @@ async function makePick(team){
 document.addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.id==="unlockBtn"){await unlock();return}
+  if(b.dataset.me){me=b.dataset.me;try{localStorage.setItem("nbawd-me",me)}catch{};selTeam=null;render();return}
+  if(b.id==="changeMe"){me=null;try{localStorage.removeItem("nbawd-me")}catch{};selTeam=null;render();return}
   if(b.id==="lockBtn"){savePw("");role=null;render();return}
   if(b.dataset.team){selTeam=selTeam===b.dataset.team?null:b.dataset.team;render();return}
   if(b.dataset.conf){confFilter=b.dataset.conf;render();return}
@@ -439,14 +453,15 @@ document.addEventListener("click",async e=>{
   if(b.id==="undoAsk"){confirmUndo=true;render();return}
   if(b.id==="undoNo"){confirmUndo=false;render();return}
   if(b.id==="undoYes"){confirmUndo=false;try{await api("undo",{expected:league.picks.length});toast("Last pick undone")}catch(err){writeFail(err)}render();return}
-  if(b.id==="resetAsk"){confirmReset=true;render();return}
+  if(b.id==="resetAsk"){confirmReset="new";render();return}
+  if(b.id==="restartAsk"){confirmReset="restart";render();return}
   if(b.id==="resetNo"){confirmReset=false;render();return}
-  if(b.id==="resetYes"){confirmReset=false;try{await api("reset");draftForm=null;location.hash="#setup";toast("League deleted")}catch(err){writeFail(err)}render();return}
+  if(b.id==="resetYes"){const mode=confirmReset;confirmReset=false;try{if(mode==="restart"){await api("restart");location.hash="#draft";toast("Draft restarted")}else{await api("reset");draftForm=null;saveForm();location.hash="#setup";toast("League deleted")}}catch(err){writeFail(err)}render();return}
   if(b.id==="editStart"){editWins=true;render();return}
   if(b.id==="editCancel"){editWins=false;render();return}
   if(b.id==="editSave"){await saveWins(b);return}
   if(!draftForm)return;
-  const P=draftForm.players;
+  const P=draftForm.players; setTimeout(saveForm,0);
   if(b.id==="addPl"){P.push("");render();document.getElementById("pl-"+(P.length-1))?.focus();return}
   if(b.id==="shuffle"){for(let i=P.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[P[i],P[j]]=[P[j],P[i]]}render();return}
   if(b.dataset.rm){P.splice(+b.dataset.rm,1);render();return}
@@ -463,8 +478,9 @@ document.addEventListener("click",async e=>{
   }
 });
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="pw"){e.preventDefault();unlock()}});
+function saveForm(){try{draftForm?localStorage.setItem("nbawd-form",JSON.stringify(draftForm)):localStorage.removeItem("nbawd-form")}catch{}}
 document.addEventListener("input",e=>{
-  if(e.target.dataset.pl!=null&&draftForm){draftForm.players[+e.target.dataset.pl]=e.target.value}
+  if(e.target.dataset.pl!=null&&draftForm){draftForm.players[+e.target.dataset.pl]=e.target.value;saveForm()}
 });
 
 async function saveWins(b){
