@@ -351,7 +351,7 @@ function vTeams(){
   if(canAdmin) head+= editWins?`<div class="inline-confirm"><button id="editCancel">Cancel</button><button class="primary" id="editSave">Save wins</button></div>`:`<button id="editStart">Edit wins by hand</button>`;
   head+=`</div>`;
   if(!canAdmin) head+=`<details class="note"><summary>Commissioner? Unlock to edit wins by hand</summary><div style="margin-top:8px">${unlockBox("Enter the commissioner password.")}</div></details>`;
-  const src=standings?.updatedAt?`<p class="note">Win totals ${standings.source==="manual"?"entered by hand":"updated automatically from NBA standings"} on ${new Date(standings.updatedAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}.</p>`:`<p class="note">No win totals recorded yet. They arrive with the first daily update.</p>`;
+  const src=standings?.updatedAt?`<p class="note">Win totals ${standings.source==="manual"?"entered by hand":"updated automatically from NBA standings (checked every 10 minutes while the site is open)"} on ${new Date(standings.updatedAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}.</p>`:`<p class="note">No win totals recorded yet. They load automatically the next time someone opens the site.</p>`;
   return `<div class="stack">${head}${src}<p class="note" style="margin-top:-10px">Exp. W is wins so far plus each remaining game at the team's preseason pace. ${LINE_SRC}.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr));gap:18px">${conf("E")}${conf("W")}</div></div>`;
 }
 
@@ -391,7 +391,7 @@ function render(){
   const h=location.hash.slice(1);
   tab=["board","draft","teams","setup"].includes(h)?h:defaultTab();
   document.querySelectorAll("#nav a").forEach(a=>a.dataset.tab===tab?a.setAttribute("aria-current","page"):a.removeAttribute("aria-current"));
-  $("#asOf").textContent = standings?.asOf?"Wins through "+fmtDate(standings.asOf):"";
+  $("#asOf").textContent = standings?.updatedAt?"Wins updated "+new Date(standings.updatedAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"";
   canWrite=canWriteF(); canAdmin=canAdminF();
   $("#who").innerHTML = role?`${role==="admin"?"Commissioner":"Player"} · <button id="lockBtn" class="linkbtn">Lock</button>`:"";
   if(netErr){ $("#main").innerHTML=`<div class="panel empty"><h2>Can't reach the league</h2><p class="muted">${esc(netErr)} The page retries on its own.</p></div>`; return; }
