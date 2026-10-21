@@ -39,7 +39,7 @@ function todayPacific() {
 // Pulls regular-season W-L for all 30 teams from ESPN's public standings feed.
 async function fetchStandings() {
   const season = process.env.SEASON || "2027"; // ESPN names a season by its ending year: 2027 = 2026-27
-  const r = await fetch(`https://site.api.espn.com/apis/v2/sports/basketball/nba/standings?season=${season}&seasontype=2`);
+  const r = await fetch(`https://site.api.espn.com/apis/v2/sports/basketball/nba/standings?season=${season}&seasontype=2`, { signal: AbortSignal.timeout(5000) });
   if (!r.ok) throw new Error(`ESPN returned ${r.status}`);
   const j = await r.json();
   const MAP = { GS: "GSW", NO: "NOP", NY: "NYK", SA: "SAS", UTAH: "UTA", WSH: "WAS" };
@@ -69,9 +69,28 @@ async function stateRoute(req, res) {
     return res.status(500).json({ error: "No database connected. In Vercel: Storage → connect Upstash Redis to this project, then Redeploy." });
   }
   try {
+    await refreshIfStale();
     res.status(200).json(await getState());
   } catch (e) {
     res.status(500).json({ error: "Database found but not reachable: " + String(e.message || e) });
+  }
+}
+
+// Live updates: whenever someone has the site open, re-pull standings from ESPN
+// if the saved copy is more than 10 minutes old, so wins show up soon after each game ends.
+const REFRESH_MS = 10 * 60 * 1000;
+async function refreshIfStale() {
+  try {
+    const st = parse(await redis.get("standings"));
+    if (st && st.updatedAt && Date.now() - Date.parse(st.updatedAt) < REFRESH_MS) return;
+    // Wins typed in by hand stick for 6 hours before live updates take over again
+    if (st && st.source === "manual" && Date.now() - Date.parse(st.updatedAt) < 6 * 3600 * 1000) return;
+    const claimed = await redis.set("refresh-lock", "1", { nx: true, px: 30000 });
+    if (!claimed) return; // another visitor is already refreshing
+    const teams = await fetchStandings();
+    await saveStandings(teams, todayPacific(), "auto");
+  } catch (e) {
+    // ESPN slow or down: keep showing the last saved standings
   }
 }
 
