@@ -19,12 +19,12 @@ const TEAM_KEYS = ["ATL","BOS","BKN","CHA","CHI","CLE","DET","IND","MIA","MIL","
 const parse = v => (typeof v === "string" ? JSON.parse(v) : v);
 
 async function getState() {
-  const [league, standings, hist] = await Promise.all([
-    redis.get("league"), redis.get("standings"), redis.hgetall("history"),
+  const [league, standings, hist, games] = await Promise.all([
+    redis.get("league"), redis.get("standings"), redis.hgetall("history"), redis.get("games"),
   ]);
   const history = Object.values(hist || {}).map(parse)
-    .sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-60);
-  return { league: parse(league) || null, standings: parse(standings) || null, history };
+    .sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-200); // the whole season, for the Analytics chart
+  return { league: parse(league) || null, standings: parse(standings) || null, history, games: parse(games) || null };
 }
 
 async function saveStandings(teams, date, source) {
@@ -56,6 +56,41 @@ async function fetchStandings() {
   return teams;
 }
 
+// Today's games (Pacific date) from ESPN's public scoreboard feed, for the Matchup of the Day tab.
+async function fetchGames(date) {
+  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${date.replace(/-/g, "")}`, { signal: AbortSignal.timeout(5000) });
+  if (!r.ok) throw new Error(`ESPN returned ${r.status}`);
+  const j = await r.json();
+  const MAP = { GS: "GSW", NO: "NOP", NY: "NYK", SA: "SAS", UTAH: "UTA", WSH: "WAS" };
+  const ab = c => MAP[c?.team?.abbreviation] || c?.team?.abbreviation;
+  const games = [];
+  for (const ev of j.events || []) {
+    const comp = ev.competitions?.[0] || {};
+    const cs = comp.competitors || [];
+    const home = cs.find(c => c.homeAway === "home"), away = cs.find(c => c.homeAway === "away");
+    if (!home || !away || !TEAM_KEYS.includes(ab(home)) || !TEAM_KEYS.includes(ab(away))) continue;
+    const st = comp.status?.type || ev.status?.type || {};
+    const win = cs.find(c => c.winner);
+    games.push({ away: ab(away), home: ab(home), start: ev.date || null, state: st.state || "pre",
+      detail: st.shortDetail || "", winner: st.state === "post" && win ? ab(win) : null });
+  }
+  return games;
+}
+
+// Keeps the saved schedule fresh: reloads it on a new day, or every 10 minutes so live/final status stays current.
+async function refreshGamesIfStale() {
+  try {
+    const g = parse(await redis.get("games"));
+    const date = todayPacific();
+    if (g && g.date === date && Date.now() - Date.parse(g.updatedAt) < REFRESH_MS) return;
+    const claimed = await redis.set("games-lock", "1", { nx: true, px: 30000 });
+    if (!claimed) return;
+    await redis.set("games", { date, updatedAt: new Date().toISOString(), games: await fetchGames(date) });
+  } catch (e) {
+    // ESPN slow or down: keep the last saved schedule
+  }
+}
+
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && timingSafeEqual(x, y);
@@ -69,7 +104,7 @@ async function stateRoute(req, res) {
     return res.status(500).json({ error: "No database connected. In Vercel: Storage → connect Upstash Redis to this project, then Redeploy." });
   }
   try {
-    await refreshIfStale();
+    await Promise.all([refreshIfStale(), refreshGamesIfStale()]);
     res.status(200).json(await getState());
   } catch (e) {
     res.status(500).json({ error: "Database found but not reachable: " + String(e.message || e) });
@@ -102,6 +137,7 @@ async function cronRoute(req, res) {
     const teams = await fetchStandings();
     const date = todayPacific();
     await saveStandings(teams, date, "auto");
+    await refreshGamesIfStale();
     res.status(200).json({ ok: true, date, teams });
   } catch (e) {
     res.status(502).json({ error: String(e.message || e) });
