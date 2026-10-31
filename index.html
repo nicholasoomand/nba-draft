@@ -232,7 +232,7 @@ const canWriteF=()=>!!role, canAdminF=()=>role==="admin";
 let league=null, leagueLoaded=false, standings=null, history=[];
 let tab=null, selTeam=null, confFilter="ALL", editWins=false, confirmReset=false, confirmUndo=false;
 let draftForm=null; // setup form state
-let slate=null, chartMode="league";
+let slate=null, chartMode="league", roast=null;
 
 function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,3200)}
 
@@ -370,7 +370,8 @@ function roastTarget(rows){
 }
 function vRoast(rows){
   let name,text,why;
-  {
+  if(roast?.text&&league.players.includes(roast.player)){name=roast.player;text=roast.text;why=roast.why||"Today's target"}
+  else{
     const t=roastTarget(rows);if(!t)return "";
     const r=t.r, played=rows.some(x=>x.w+x.l>0);
     const worst=[...r.teams].sort((a,b)=>{const x=rec(a),y=rec(b),px=(x.w+x.l)?x.w/(x.w+x.l):.5,py=(y.w+y.l)?y.w/(y.w+y.l):.5;return px-py||proj(a)-proj(b)})[0];
@@ -643,7 +644,7 @@ let pw=""; try{pw=localStorage.getItem("nbawd-pw")||""}catch{}
 function savePw(v){pw=v;try{v?localStorage.setItem("nbawd-pw",v):localStorage.removeItem("nbawd-pw")}catch{}}
 function applyState(st){
   if(!st)return;
-  league=st.league||null; standings=st.standings||null; history=st.history||[]; slate=st.games||null; leagueLoaded=true;
+  league=st.league||null; standings=st.standings||null; history=st.history||[]; slate=st.games||null; roast=st.roast||null; leagueLoaded=true;
   if(league&&selTeam&&ownerOf(selTeam))selTeam=null;
   render();
 }
