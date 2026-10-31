@@ -19,12 +19,12 @@ const TEAM_KEYS = ["ATL","BOS","BKN","CHA","CHI","CLE","DET","IND","MIA","MIL","
 const parse = v => (typeof v === "string" ? JSON.parse(v) : v);
 
 async function getState() {
-  const [league, standings, hist, games] = await Promise.all([
-    redis.get("league"), redis.get("standings"), redis.hgetall("history"), redis.get("games"),
+  const [league, standings, hist, games, roast] = await Promise.all([
+    redis.get("league"), redis.get("standings"), redis.hgetall("history"), redis.get("games"), redis.get("roast"),
   ]);
   const history = Object.values(hist || {}).map(parse)
     .sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-200); // the whole season, for the Analytics chart
-  return { league: parse(league) || null, standings: parse(standings) || null, history, games: parse(games) || null };
+  return { league: parse(league) || null, standings: parse(standings) || null, history, games: parse(games) || null, roast: parse(roast) || null };
 }
 
 async function saveStandings(teams, date, source) {
@@ -91,6 +91,188 @@ async function refreshGamesIfStale() {
   }
 }
 
+// ---------- Daily Roast ----------
+// One roast per day, picked on the server so everyone sees the same one. Every roast is built from an
+// opener + closer pair, and each pair is used at most once per season (tracked in the "roast-used" set),
+// so the same insult never shows up twice. When possible the opener calls out the actual loss that sank
+// the target's day: the opponent, the score, upsets against a worse team, and the losing team's top scorer.
+const LINE = {ATL:43.5,BOS:51.5,BKN:24.5,CHA:39.5,CHI:29.5,CLE:48.5,DAL:34.5,DEN:49.5,DET:49.5,GSW:39.5,HOU:48.5,IND:44.5,LAC:27.5,LAL:46.5,MEM:28.5,MIA:46.5,MIL:26.5,MIN:48.5,NOP:27.5,NYK:52.5,OKC:60.5,ORL:43.5,PHI:50.5,PHX:40.5,POR:43.5,SAC:20.5,SAS:59.5,TOR:45.5,UTA:35.5,WAS:35.5};
+const NICK = {ATL:"Hawks",BOS:"Celtics",BKN:"Nets",CHA:"Hornets",CHI:"Bulls",CLE:"Cavaliers",DET:"Pistons",IND:"Pacers",MIA:"Heat",MIL:"Bucks",NYK:"Knicks",ORL:"Magic",PHI:"76ers",TOR:"Raptors",WAS:"Wizards",DAL:"Mavericks",DEN:"Nuggets",GSW:"Warriors",HOU:"Rockets",LAC:"Clippers",LAL:"Lakers",MEM:"Grizzlies",MIN:"Timberwolves",NOP:"Pelicans",OKC:"Thunder",PHX:"Suns",POR:"Trail Blazers",SAC:"Kings",SAS:"Spurs",UTA:"Jazz"};
+const ord = n => n + (["th","st","nd","rd"][((n % 100) - 20) % 10] || ["th","st","nd","rd"][n % 100] || "th");
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+function pacificHour() {
+  return +new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", hour12: false }).format(new Date()) % 24;
+}
+function dayBefore(date) {
+  const d = new Date(date + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10);
+}
+
+// Final scores for one date, with each team's top scorer.
+async function fetchResults(date) {
+  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${date.replace(/-/g, "")}`, { signal: AbortSignal.timeout(5000) });
+  if (!r.ok) throw new Error(`ESPN returned ${r.status}`);
+  const j = await r.json();
+  const MAP = { GS: "GSW", NO: "NOP", NY: "NYK", SA: "SAS", UTAH: "UTA", WSH: "WAS" };
+  const ab = c => MAP[c?.team?.abbreviation] || c?.team?.abbreviation;
+  const topScorer = c => {
+    const cat = (c.leaders || []).find(l => l.name === "points" || l.abbreviation === "PTS");
+    const L = cat?.leaders?.[0];
+    const name = L?.athlete?.displayName || L?.athlete?.shortName;
+    const pts = Math.round(+(L?.value ?? parseFloat(L?.displayValue)));
+    return name && Number.isFinite(pts) ? { name, pts } : null;
+  };
+  const out = [];
+  for (const ev of j.events || []) {
+    const comp = ev.competitions?.[0] || {};
+    const st = comp.status?.type || ev.status?.type || {};
+    if (st.state !== "post") continue;
+    const cs = comp.competitors || [];
+    const win = cs.find(c => c.winner), lose = cs.find(c => c !== win);
+    if (!win || !lose || !TEAM_KEYS.includes(ab(win)) || !TEAM_KEYS.includes(ab(lose))) continue;
+    const ws = +win.score, ls = +lose.score;
+    out.push({ winner: ab(win), loser: ab(lose), ws, ls, margin: ws - ls, loserTop: topScorer(lose) });
+  }
+  return out;
+}
+
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+// Openers always name the player. "need" says when an opener makes sense.
+const GAME_OPENERS = [
+  { id: "g1", need: g => g.upset, t: c => `${c.P}'s ${c.T} lost to the ${c.O}, a team Vegas expected to win ${c.OL} games` },
+  { id: "g2", need: g => g.margin >= 10, t: c => `${c.P}'s ${c.T} got run off the floor by the ${c.O}, ${c.S}` },
+  { id: "g3", need: g => g.loserTop, t: c => `${c.star} scored ${c.pts} as ${c.P}'s ${c.T} lost to the ${c.O}` },
+  { id: "g4", need: g => g.loserTop && g.loserTop.pts < 20, t: c => `${c.star} led ${c.P}'s ${c.T} with a whopping ${c.pts} points in a loss to the ${c.O}` },
+  { id: "g5", need: g => g.upset, t: c => `${c.P}'s ${c.T} somehow lost to the ${c.O} ${c.S}` },
+  { id: "g6", need: g => g.margin >= 15, t: c => `${c.P}'s ${c.T} lost by ${c.M} to the ${c.O}` },
+  { id: "g7", need: () => true, t: c => `The ${c.O} beat ${c.P}'s ${c.T} ${c.S}` },
+  { id: "g8", need: g => g.margin <= 5, t: c => `${c.P}'s ${c.T} found a way to lose a ${c.M}-point game to the ${c.O}` },
+  { id: "g9", need: g => LINE[g.winner] < 32, t: c => `${c.P}'s ${c.T} lost to the tanking ${c.O}` },
+  { id: "g10", need: g => g.loserTop && g.loserTop.pts >= 25, t: c => `${c.P}'s ${c.T} lost ${c.S} to the ${c.O} even with ${c.star} dropping ${c.pts}` },
+  { id: "g11", need: () => true, t: c => `${c.P} needed the ${c.T} last night and got a ${c.S} loss to the ${c.O}` },
+];
+const PLAIN_OPENERS = [
+  { id: "n1", need: c => c.day, t: c => `${c.P} added ${plural(c.dw, "win")} yesterday while everyone else moved on with their lives` },
+  { id: "n2", need: c => c.rank > 1, t: c => `${c.P} is ${ord(c.rank)} out of ${c.n}` },
+  { id: "n3", need: c => c.gb >= 1, t: c => `${c.P} sits ${plural(c.gb, "win")} out of first` },
+  { id: "n4", need: c => c.played, t: c => `${c.P}'s roster is a combined ${c.rec}` },
+  { id: "n5", need: c => c.played, t: c => `${c.P}'s ${c.WT} are ${c.WR}` },
+  { id: "n6", need: c => c.day, t: c => `${c.P} went ${c.dw}-${c.dl} yesterday` },
+  { id: "n7", need: () => true, t: c => `${c.P} drafted the ${c.WT} with a straight face` },
+  { id: "n8", need: () => true, t: c => `${c.P} built this roster on purpose` },
+  { id: "n9", need: c => c.rank === c.n, t: c => `${c.P} is in last place` },
+];
+const CLOSERS = [
+  "and the group chat has officially stopped pretending it's bad luck",
+  "which is about what you'd expect from someone who drafts with their eyes closed",
+  "and even the teams that are tanking on purpose feel bad for them",
+  "and Vegas is thinking about taking them off the board out of pity",
+  "so maybe it's time to let a coin flip make their picks",
+  "and their roster is now the cautionary tale we tell new drafters",
+  "and the only thing falling faster than their team is their credibility",
+  "and the standings have stopped being polite about it",
+  "which is the least surprising thing to happen since draft night",
+  "and they still had the nerve to show up in the group chat",
+  "and somewhere a lottery front office is taking notes",
+  "and the trophy has filed a restraining order",
+  "proof that confidence and basketball knowledge are two different things",
+  "and it's starting to look like they drafted off the 2006 standings",
+  "and their picks are aging worse than gas station sushi",
+  "and the season is long, but not that long",
+  "which explains why nobody asks them for picks anymore",
+  "and the draft board would like a word",
+  "so at least they're consistent",
+  "and the only direction they've moved all season is backwards",
+  "and the rest of the league sends its thoughts and prayers",
+  "and that's not a slump, that's a lifestyle",
+  "and they've officially become the league's favorite free win",
+  "and their basketball takes should come with a warning label",
+  "which is impressive in the worst possible way",
+  "and the scouting report on their drafting is just a shrug emoji",
+  "and every other player in this league is quietly thanking them",
+];
+
+async function buildRoast() {
+  const [league, standings, hist] = await Promise.all([redis.get("league"), redis.get("standings"), redis.hgetall("history")]);
+  const L = parse(league), S = parse(standings);
+  if (!L || L.status !== "complete" || !S?.teams) return null;
+  const history = Object.values(hist || {}).map(parse).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const prev = [...history].reverse().find(h => h.date < S.asOf);
+  const rec = (src, a) => ({ w: +(src?.teams?.[a]?.w || 0), l: +(src?.teams?.[a]?.l || 0) });
+  const rows = L.players.map((name, i) => {
+    const teams = L.picks.filter(p => p.p === i).map(p => p.t);
+    let w = 0, l = 0, pw = 0, pl = 0;
+    teams.forEach(a => { const r = rec(S, a), q = rec(prev, a); w += r.w; l += r.l; pw += q.w; pl += q.l; });
+    return { name, teams, w, l, dw: prev ? w - pw : null, dl: prev ? l - pl : null };
+  }).sort((x, y) => y.w - x.w || x.l - y.l || x.name.localeCompare(y.name));
+  const lead = rows[0];
+  rows.forEach((r, k) => { r.gb = lead.w - r.w; r.rank = k > 0 && rows[k - 1].w === r.w && rows[k - 1].l === r.l ? rows[k - 1].rank : k + 1; });
+
+  // Target: worst day if days differ, otherwise last place.
+  let target = rows[rows.length - 1], why = "Last place", day = false;
+  if (prev && rows.some(r => r.dw !== rows[0].dw || r.dl !== rows[0].dl)) {
+    target = [...rows].sort((a, b) => a.dw - b.dw || b.dl - a.dl || a.w - b.w)[0];
+    why = "Worst day in the league"; day = true;
+  }
+
+  // The loss that hurt most: an upset against a worse team, then the bigger margin.
+  let game = null;
+  try {
+    const results = await fetchResults(dayBefore(todayPacific()));
+    const losses = results.filter(g => target.teams.includes(g.loser)).map(g => ({ ...g, upset: LINE[g.loser] - LINE[g.winner] >= 4 }));
+    losses.sort((a, b) => (LINE[b.loser] - LINE[b.winner]) + b.margin / 2 - ((LINE[a.loser] - LINE[a.winner]) + a.margin / 2));
+    game = losses[0] || null;
+  } catch (e) { /* no game details today; plain roast */ }
+
+  const played = rows.some(r => r.w + r.l > 0);
+  const worstTeam = [...target.teams].sort((a, b) => {
+    const x = rec(S, a), y = rec(S, b), px = x.w + x.l ? x.w / (x.w + x.l) : .5, py = y.w + y.l ? y.w / (y.w + y.l) : .5;
+    return px - py || LINE[a] - LINE[b];
+  })[0];
+  const wr = rec(S, worstTeam);
+  const c = {
+    P: target.name, rank: target.rank, n: rows.length, gb: target.gb, rec: `${target.w}-${target.l}`, played, day,
+    dw: target.dw, dl: target.dl, WT: NICK[worstTeam], WR: `${wr.w}-${wr.l}`,
+  };
+  if (game) Object.assign(c, {
+    T: NICK[game.loser], O: NICK[game.winner], S: `${game.ws}-${game.ls}`, M: game.margin, OL: LINE[game.winner],
+    star: game.loserTop?.name, pts: game.loserTop?.pts,
+  });
+
+  const openers = [
+    ...(game ? GAME_OPENERS.filter(o => o.need(game)) : []),
+    ...PLAIN_OPENERS.filter(o => o.need(c)),
+  ];
+  const used = new Set((await redis.smembers("roast-used")) || []);
+  let pairs = [];
+  for (const o of openers) CLOSERS.forEach((cl, k) => { const key = `${o.id}|${k}`; if (!used.has(key)) pairs.push({ o, k, key }); });
+  if (!pairs.length) return null;
+  // Lean on the actual game when there is one: 3 out of 4 days, if a fresh game pair exists.
+  const gamePairs = pairs.filter(p => p.o.id[0] === "g");
+  if (gamePairs.length && Math.random() < 0.75) pairs = gamePairs;
+  const choice = pick(pairs);
+  const text = `${choice.o.t(c)}, ${CLOSERS[choice.k]}.`;
+  await redis.sadd("roast-used", choice.key);
+  return { player: target.name, text: text[0].toUpperCase() + text.slice(1), why, game: game ? `${game.winner} ${game.ws}, ${game.loser} ${game.ls}` : null };
+}
+
+// Builds today's roast once, after last night's games are final (6 AM Pacific).
+async function ensureRoast() {
+  try {
+    const date = todayPacific();
+    const cur = parse(await redis.get("roast"));
+    if (cur && cur.date === date) return;
+    if (pacificHour() < 6) return;
+    const claimed = await redis.set("roast-lock", "1", { nx: true, px: 60000 });
+    if (!claimed) return;
+    const r = await buildRoast();
+    if (r) await redis.set("roast", { date, ...r, createdAt: new Date().toISOString() });
+  } catch (e) {
+    // keep yesterday's roast if anything goes wrong
+  }
+}
+
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && timingSafeEqual(x, y);
@@ -105,6 +287,7 @@ async function stateRoute(req, res) {
   }
   try {
     await Promise.all([refreshIfStale(), refreshGamesIfStale()]);
+    await ensureRoast();
     res.status(200).json(await getState());
   } catch (e) {
     res.status(500).json({ error: "Database found but not reachable: " + String(e.message || e) });
@@ -138,6 +321,7 @@ async function cronRoute(req, res) {
     const date = todayPacific();
     await saveStandings(teams, date, "auto");
     await refreshGamesIfStale();
+    await ensureRoast();
     res.status(200).json({ ok: true, date, teams });
   } catch (e) {
     res.status(502).json({ error: String(e.message || e) });
